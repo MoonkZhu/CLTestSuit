@@ -1,6 +1,5 @@
 import os
 import sys
-import json
 import subprocess
 import argparse
 import re
@@ -20,9 +19,7 @@ def find_tests(tests_dir='tests'):
     for item in os.listdir(tests_dir):
         test_path = os.path.join(tests_dir, item)
         if os.path.isdir(test_path):
-            manifest_path = os.path.join(test_path, 'manifest.json')
-            if os.path.exists(manifest_path):
-                test_cases.append(test_path)
+            test_cases.append(test_path)
     return test_cases
 
 def extract_numbers(text):
@@ -42,18 +39,36 @@ def compare_golden(output_text, golden_text):
 
     return True, ""
 
-def build_test(test_dir, manifest, test_name):
-    # Extract build config
-    host_sources = manifest.get('host_sources', [])
-    compiler_flags = manifest.get('compiler_flags', [])
+def validate_test_structure(test_dir):
+    files = os.listdir(test_dir)
+    cpp_files = [f for f in files if f.endswith('.cpp')]
+    cl_files = [f for f in files if f.endswith('.cl')]
 
+    if len(cpp_files) == 0:
+        return False, [], "No .cpp files found in test directory."
+
+    if len(cpp_files) > 1 and 'main.cpp' not in cpp_files:
+        return False, [], "Multiple .cpp files found, but 'main.cpp' is missing."
+
+    if len(cl_files) == 0:
+        return False, [], "No .cl kernel file found in test directory."
+
+    if len(cl_files) > 1:
+        return False, [], f"Multiple .cl files found: {cl_files}. Exactly one .cl file is allowed."
+
+    if 'expected.txt' not in files:
+        return False, [], "Missing 'expected.txt' golden reference file."
+
+    return True, cpp_files, ""
+
+def build_test(test_dir, test_name, cpp_files):
     # Resolve absolute paths
-    src_paths = [os.path.join(test_dir, src) for src in host_sources]
+    src_paths = [os.path.join(test_dir, src) for src in cpp_files]
     output_bin = os.path.join(test_dir, 'test_bin')
 
     # Construct compiler command
-    # Prefer clang++, fallback to g++ if needed, but let's just use g++ as standard default if not specified
     compiler = os.environ.get('CXX', 'g++')
+    compiler_flags = ["-std=c++11", "-lOpenCL"]
 
     cmd = [compiler] + src_paths + ['-o', output_bin] + compiler_flags
 
@@ -72,7 +87,7 @@ def build_test(test_dir, manifest, test_name):
     except Exception as e:
         return False, output_bin, f"Failed to run compiler: {str(e)}"
 
-def run_test(test_dir, manifest, test_name, output_bin):
+def run_test(test_dir, test_name, output_bin):
     run_log_path = os.path.join('logs', 'run', f'{test_name}_run.log')
 
     try:
@@ -98,18 +113,13 @@ def run_test(test_dir, manifest, test_name, output_bin):
             return False, f"Execution failed (exit code {result.returncode}). See {run_log_path}"
 
         # Verify Golden
-        golden_file = manifest.get('golden_file')
-        if golden_file:
-            golden_path = os.path.join(test_dir, golden_file)
-            if not os.path.exists(golden_path):
-                return False, f"Golden file '{golden_file}' not found."
+        golden_path = os.path.join(test_dir, 'expected.txt')
+        with open(golden_path, 'r') as f:
+            golden_text = f.read()
 
-            with open(golden_path, 'r') as f:
-                golden_text = f.read()
-
-            match, msg = compare_golden(result.stdout, golden_text)
-            if not match:
-                return False, f"Verification failed: {msg}"
+        match, msg = compare_golden(result.stdout, golden_text)
+        if not match:
+            return False, f"Verification failed: {msg}"
 
         return True, ""
 
@@ -135,31 +145,28 @@ def main():
 
     for test_dir in test_cases:
         test_name = os.path.basename(test_dir)
-        manifest_path = os.path.join(test_dir, 'manifest.json')
+        display_name = test_name
 
-        try:
-            with open(manifest_path, 'r') as f:
-                manifest = json.load(f)
-        except Exception as e:
-            print(f"Test {test_name}: [FAIL] - Invalid manifest.json: {e}")
+        # 1. Validate Structure
+        valid, cpp_files, err_msg = validate_test_structure(test_dir)
+        if not valid:
+            print(f"Test '{display_name}': [FAIL] - {err_msg}")
             continue
 
-        display_name = manifest.get('name', test_name)
-
-        # 1. Build
-        build_ok, output_bin, build_err = build_test(test_dir, manifest, test_name)
+        # 2. Build
+        build_ok, output_bin, build_err = build_test(test_dir, test_name, cpp_files)
         if not build_ok:
             print(f"Test '{display_name}': [FAIL] - {build_err}")
             continue
 
-        # 2. Run & Verify
-        run_ok, run_err = run_test(test_dir, manifest, test_name, output_bin)
+        # 3. Run & Verify
+        run_ok, run_err = run_test(test_dir, test_name, output_bin)
 
-        # 3. Cleanup
+        # 4. Cleanup
         if not args.keep_binaries and os.path.exists(output_bin):
             os.remove(output_bin)
 
-        # 4. Report
+        # 5. Report
         if run_ok:
             print(f"Test '{display_name}': [PASS]")
             passed_count += 1

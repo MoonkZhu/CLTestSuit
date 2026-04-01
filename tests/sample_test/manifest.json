@@ -1,7 +1,0 @@
-{
-  "name": "Vector Addition Sample",
-  "host_sources": ["main.cpp"],
-  "kernel_files": ["kernel.cl"],
-  "compiler_flags": ["-std=c++11", "-lOpenCL"],
-  "golden_file": "expected.txt"
-}

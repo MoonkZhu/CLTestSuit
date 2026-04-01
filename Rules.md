@@ -3,32 +3,30 @@
 Adding a new test case to this framework is designed to be extremely simple. Just follow these rules:
 
 ## 1. Directory Structure
-Every test case must live in its own subdirectory inside the `tests/` folder.
+Every test case must live in its own subdirectory inside the `tests/` folder. The name of the directory will automatically be used as the name of the test.
 Example: `tests/my_new_test/`
 
 ## 2. Required Files
-Each test directory must contain at least three things:
-1. **`manifest.json`**: A configuration file defining the test metadata.
-2. **C++ Host Source Code**: Usually `main.cpp`.
-3. **Golden Reference File**: A text file containing the expected numerical output.
+The Python runner automatically discovers your test files based on the following conventions. Each test directory must contain exactly:
+1. **C++ Host Source Code (`.cpp` files)**: You must have at least one `.cpp` file. If your test requires multiple `.cpp` files, one of them *must* be named `main.cpp`.
+2. **OpenCL Kernel File (`.cl` file)**: You must provide exactly *one* `.cl` file. The runner will throw an error if multiple kernel files are found in a single test directory.
+3. **Golden Reference File (`expected.txt`)**: *(Optional)* A text file containing the expected numerical output.
 
-*Optional*: If your test uses an external OpenCL kernel, include your `.cl` file in the directory.
+*Note: The runner automatically compiles your `.cpp` files with the flags `-std=c++11 -lOpenCL`.*
 
-## 3. The `manifest.json` Format
-The manifest tells the Python runner how to build and verify your test.
-```json
-{
-  "name": "My New Test",
-  "host_sources": ["main.cpp"],
-  "kernel_files": ["kernel.cl"],
-  "compiler_flags": ["-std=c++11", "-lOpenCL"],
-  "golden_file": "expected.txt"
-}
-```
+## 3. Verification Modes
+The runner supports two modes of output verification depending on whether `expected.txt` is present.
+
+### Mode A: Golden File Verification (Default)
+If you include an `expected.txt` file in your test directory, the runner will use it.
+- **Output Format**: Print your numerical results to `stdout` (e.g., `std::cout << result << std::endl;`). The Python runner will extract all numbers from your output and compare them against `expected.txt` using a global floating-point tolerance (epsilon = `1e-5`).
+
+### Mode B: Host-Verified Verification
+If you omit `expected.txt`, the runner relies on your C++ code to verify the results.
+- **Output Format**: Your C++ code must perform the array comparison internally. It must print the word `PASS` to stdout if the test succeeds. If the test fails, it should print `FAIL` or `mismatch`. The runner will scan the output for these keywords (case-insensitive).
 
 ## 4. Writing the C++ Host Code
-- **Success/Failure**: Your C++ program MUST return `0` on success and a non-zero exit code on failure. The Python runner uses this to determine if the process crashed or completed.
-- **Output Format**: Simply print your numerical results to `stdout` (e.g., `std::cout << result << std::endl;`). The Python runner will automatically extract numbers from your output and compare them against the golden reference file using a global floating-point tolerance (epsilon = `1e-5`).
+- **Success/Failure**: Regardless of the verification mode, your C++ program MUST return `0` on success and a non-zero exit code on failure. The Python runner uses this to determine if the process crashed.
 - **OpenCL Build Errors**: If your `clBuildProgram` fails at runtime, you MUST catch it and print the OpenCL build log to `stderr` with the prefix `[KERNEL_BUILD_ERROR]`. The Python runner will look for this prefix to identify compilation failures vs. execution failures.
   Example:
   ```cpp
@@ -47,9 +45,10 @@ python runner.py --keep-binaries
 ```
 
 The runner will automatically:
-1. Discover your test in the `tests/` folder.
-2. Compile your C++ code.
-3. Run the binary.
-4. Compare the numerical output against your golden file.
-5. Provide a clean `[PASS]` or `[FAIL]` summary in the terminal.
-6. Save build and run logs to `logs/build/` and `logs/run/`.
+1. Discover your test in the `tests/` folder and name it based on the directory.
+2. Validate the directory structure (e.g. exactly one `.cl` file, presence of `expected.txt`).
+3. Compile your C++ code.
+4. Run the binary.
+5. Verify the output using either the Golden File or Host-Verified mode.
+6. Provide a clean `[PASS]` or `[FAIL]` summary in the terminal.
+7. Save build and run logs to `logs/build/` and `logs/run/`.

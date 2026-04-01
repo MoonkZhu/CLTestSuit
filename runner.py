@@ -45,21 +45,20 @@ def validate_test_structure(test_dir):
     cl_files = [f for f in files if f.endswith('.cl')]
 
     if len(cpp_files) == 0:
-        return False, [], "No .cpp files found in test directory."
+        return False, [], False, "No .cpp files found in test directory."
 
     if len(cpp_files) > 1 and 'main.cpp' not in cpp_files:
-        return False, [], "Multiple .cpp files found, but 'main.cpp' is missing."
+        return False, [], False, "Multiple .cpp files found, but 'main.cpp' is missing."
 
     if len(cl_files) == 0:
-        return False, [], "No .cl kernel file found in test directory."
+        return False, [], False, "No .cl kernel file found in test directory."
 
     if len(cl_files) > 1:
-        return False, [], f"Multiple .cl files found: {cl_files}. Exactly one .cl file is allowed."
+        return False, [], False, f"Multiple .cl files found: {cl_files}. Exactly one .cl file is allowed."
 
-    if 'expected.txt' not in files:
-        return False, [], "Missing 'expected.txt' golden reference file."
+    has_golden = 'expected.txt' in files
 
-    return True, cpp_files, ""
+    return True, cpp_files, has_golden, ""
 
 def build_test(test_dir, test_name, cpp_files):
     # Resolve absolute paths
@@ -87,7 +86,7 @@ def build_test(test_dir, test_name, cpp_files):
     except Exception as e:
         return False, output_bin, f"Failed to run compiler: {str(e)}"
 
-def run_test(test_dir, test_name, output_bin):
+def run_test(test_dir, test_name, output_bin, has_golden):
     run_log_path = os.path.join('logs', 'run', f'{test_name}_run.log')
 
     try:
@@ -112,14 +111,24 @@ def run_test(test_dir, test_name, output_bin):
         if result.returncode != 0:
             return False, f"Execution failed (exit code {result.returncode}). See {run_log_path}"
 
-        # Verify Golden
-        golden_path = os.path.join(test_dir, 'expected.txt')
-        with open(golden_path, 'r') as f:
-            golden_text = f.read()
+        if has_golden:
+            # Verify Golden
+            golden_path = os.path.join(test_dir, 'expected.txt')
+            with open(golden_path, 'r') as f:
+                golden_text = f.read()
 
-        match, msg = compare_golden(result.stdout, golden_text)
-        if not match:
-            return False, f"Verification failed: {msg}"
+            match, msg = compare_golden(result.stdout, golden_text)
+            if not match:
+                return False, f"Verification failed (Golden mismatch): {msg}"
+        else:
+            # Host-Verified Mode
+            # Check for specific failure keywords in the output
+            output_lower = result.stdout.lower() + result.stderr.lower()
+            if "fail" in output_lower or "mismatch" in output_lower:
+                return False, f"Verification failed (Host reported failure). See {run_log_path}"
+
+            if "pass" not in output_lower:
+                return False, f"Verification failed (Host did not report 'PASS'). See {run_log_path}"
 
         return True, ""
 
@@ -148,7 +157,7 @@ def main():
         display_name = test_name
 
         # 1. Validate Structure
-        valid, cpp_files, err_msg = validate_test_structure(test_dir)
+        valid, cpp_files, has_golden, err_msg = validate_test_structure(test_dir)
         if not valid:
             print(f"Test '{display_name}': [FAIL] - {err_msg}")
             continue
@@ -160,7 +169,7 @@ def main():
             continue
 
         # 3. Run & Verify
-        run_ok, run_err = run_test(test_dir, test_name, output_bin)
+        run_ok, run_err = run_test(test_dir, test_name, output_bin, has_golden)
 
         # 4. Cleanup
         if not args.keep_binaries and os.path.exists(output_bin):

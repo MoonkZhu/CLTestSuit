@@ -61,30 +61,14 @@ def validate_test_structure(test_dir):
     return True, cpp_files, has_golden, ""
 
 def build_test(test_dir, test_name, cpp_files):
-    # Resolve absolute paths
-    src_paths = [os.path.join(test_dir, src) for src in cpp_files]
+    # Auto-build is disabled as we now use CMake.
+    # We just check if the test_bin executable was built manually.
     output_bin = os.path.join(test_dir, 'test_bin')
 
-    # Construct compiler command
-    compiler = os.environ.get('CXX', 'g++')
-    compiler_flags = ["-std=c++11", "-lOpenCL"]
+    if not os.path.exists(output_bin):
+        return False, output_bin, "Executable 'test_bin' not found. Please build using CMake before running."
 
-    cmd = [compiler] + src_paths + ['-o', output_bin] + compiler_flags
-
-    build_log_path = os.path.join('logs', 'build', f'{test_name}_build.log')
-
-    try:
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        with open(build_log_path, 'w') as f:
-            f.write(f"Command: {' '.join(cmd)}\n")
-            f.write(result.stdout)
-
-        if result.returncode != 0:
-            return False, output_bin, f"Compilation failed (exit code {result.returncode}). See {build_log_path}"
-
-        return True, output_bin, ""
-    except Exception as e:
-        return False, output_bin, f"Failed to run compiler: {str(e)}"
+    return True, output_bin, ""
 
 def run_test(test_dir, test_name, output_bin, has_golden):
     run_log_path = os.path.join('logs', 'run', f'{test_name}_run.log')
@@ -172,8 +156,9 @@ def main():
         run_ok, run_err = run_test(test_dir, test_name, output_bin, has_golden)
 
         # 4. Cleanup
-        if not args.keep_binaries and os.path.exists(output_bin):
-            os.remove(output_bin)
+        # Note: We now keep binaries by default since they are managed by CMake.
+        # if not args.keep_binaries and os.path.exists(output_bin):
+        #     os.remove(output_bin)
 
         # 5. Report
         if run_ok:

@@ -26,7 +26,7 @@ If you omit `expected.txt`, the runner relies on your C++ code to verify the res
 - **Output Format**: Your C++ code must perform the array comparison internally. It must print the word `PASS` to stdout if the test succeeds. If the test fails, it should print `FAIL` or `mismatch`. The runner will scan the output for these keywords (case-insensitive).
 
 ### 4. Writing the C++ Host Code
-- **Success/Failure**: Regardless of the verification mode, your C++ program MUST return `0` on success and a non-zero exit code on failure. The Python runner uses this to determine if the process crashed.
+- **Success/Failure (CRITICAL)**: Regardless of the verification mode, your C++ program **MUST return `0` on success and a non-zero exit code on failure**. The Python runner heavily relies on the exit code to determine if the test passed or failed (alongside other output checks).
 - **OpenCL Build Errors**: If your `clBuildProgram` fails at runtime, you MUST catch it and print the OpenCL build log to `stderr` with the prefix `[KERNEL_BUILD_ERROR]`. The Python runner will look for this prefix to identify compilation failures vs. execution failures.
   Example:
   ```cpp
@@ -60,4 +60,4 @@ The runner will automatically:
 4. Run the binary.
 5. Verify the output using either the Golden File or Host-Verified mode.
 6. Provide a clean `[PASS]` or `[FAIL]` summary in the terminal.
-7. Save run logs to `logs/run/`.
+7. Save the test results (including execution time) to `results.csv`.

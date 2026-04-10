@@ -1,43 +1,52 @@
 # CLTestSuit
 
-## OpenCL Test Suite Rules
+## OpenCL 测试套件规则
 
-Adding a new test case to this framework is designed to be extremely simple. Just follow these rules:
+向该框架添加新的测试用例非常简单。只需遵循以下规则：
 
-### 1. Directory Structure
-Every test case must live in its own subdirectory inside the `tests/` folder. The name of the directory will automatically be used as the name of the test.
-Example: `tests/my_new_test/`
+### 1. 目录结构
+每个测试用例必须位于 `tests/` 文件夹内的一个独立子目录中。该目录的名称将自动作为测试项的名称。
+例如：`tests/my_new_test/`
 
-### 2. Required Files
-The Python runner automatically discovers your test files based on the following conventions. Each test directory must contain exactly:
-1. **C++ Host Source Code (`.cpp` files)**: You must have at least one `.cpp` file. If your test requires multiple `.cpp` files, one of them *must* be named `main.cpp`.
-2. **OpenCL Kernel File (`.cl` file)**: You must provide exactly *one* `.cl` file. The runner will throw an error if multiple kernel files are found in a single test directory.
-3. **Golden Reference File (`expected.txt`)**: *(Optional)* A text file containing the expected numerical output.
+### 2. 标准用例所需文件
+对于标准的 C++ 测试用例，每个测试目录必须包含：
+1. **C++ 主机源代码（`.cpp` 文件）**：必须至少有一个 `.cpp` 文件。如果需要多个，其中一个**必须**命名为 `main.cpp`。
+2. **OpenCL 内核文件（`.cl` 文件）**：必须提供且仅提供**一个** `.cl` 文件。
+3. **预期结果参考文件（`expected.txt`）**：*（可选）* 包含预期数字输出的文本文件。
 
-### 3. Verification Modes
-The runner supports two modes of output verification depending on whether `expected.txt` is present.
+### 3. 特殊用例支持（脚本与环境变量）
+框架支持复杂的特殊测试用例：
+1. **自定义环境变量 (`env.txt`)**：如果你的测试需要特定的环境变量，可以在测试用例根目录下创建一个 `env.txt` 文件。
+   - 格式：每行一个变量，如 `MYENV=1`。Runner 在执行时会自动加载这些变量。
+   - 在生成的测试结果中，该用例的 `Has Env` 列会被标记为 `Yes`。
+2. **自定义运行脚本 (`run.sh`)**：对于一些结构较大的工程，如果它们有自己的编译和执行流程，你可以在目录下放置一个 `run.sh`。
+   - 当检测到 `run.sh` 时，CMake 会跳过该用例的自动编译，Runner 也会直接执行 `bash run.sh` 而不是去寻找 `test_bin`。
+   - 在生成的测试结果中，该用例的 `Type` 列会被标记为 `Script`。
 
-#### Mode A: Golden File Verification (Default)
-If you include an `expected.txt` file in your test directory, the runner will use it.
-- **Output Format**: Print your numerical results to `stdout` (e.g., `std::cout << result << std::endl;`). The Python runner will extract all numbers from your output and compare them against `expected.txt` using a global floating-point tolerance (epsilon = `1e-5`).
+### 4. 验证模式
+Runner 支持两种输出验证模式（取决于 `expected.txt` 是否存在）：
 
-#### Mode B: Host-Verified Verification
-If you omit `expected.txt`, the runner relies on your C++ code to verify the results.
-- **Output Format**: Your C++ code must perform the array comparison internally. It must print the word `PASS` to stdout if the test succeeds. If the test fails, it should print `FAIL` or `mismatch`. The runner will scan the output for these keywords (case-insensitive).
+#### 模式 A: 预期文件验证 (默认)
+如果你提供了 `expected.txt` 文件：
+- **输出格式**：将数字结果打印到标准输出 `stdout`（例如：`std::cout << result << std::endl;`）。Python runner 会提取所有数字并使用浮点容差（epsilon = `1e-5`）与 `expected.txt` 进行比对。
 
-### 4. Writing the C++ Host Code
-- **Success/Failure (CRITICAL)**: Regardless of the verification mode, your C++ program **MUST return `0` on success and a non-zero exit code on failure**. The Python runner heavily relies on the exit code to determine if the test passed or failed (alongside other output checks).
-- **OpenCL Build Errors**: If your `clBuildProgram` fails at runtime, you MUST catch it and print the OpenCL build log to `stderr` with the prefix `[KERNEL_BUILD_ERROR]`. The Python runner will look for this prefix to identify compilation failures vs. execution failures.
-  Example:
+#### 模式 B: 主机端自主验证
+如果省略了 `expected.txt`，Runner 将依赖你的 C++ 代码来进行内部比对。
+- **输出格式**：你的 C++ 代码必须在内部完成数组对比。如果测试成功，必须向 stdout 打印单词 `PASS`。如果测试失败，应打印 `FAIL` 或 `mismatch`。Runner 会扫描输出以寻找这些关键字（不区分大小写）。
+
+### 5. 编写 C++ 主机代码
+- **成功/失败 (极其重要)**：无论使用哪种验证模式，你的 C++ 程序（或 run.sh 脚本）**成功时必须返回 `0`，失败时必须返回非零退出码**。Python runner 强依赖退出码来判断测试是通过还是失败。
+- **OpenCL 构建错误**：如果你的 `clBuildProgram` 在运行时失败，你必须捕获它并将构建日志带上 `[KERNEL_BUILD_ERROR]` 的前缀打印到标准错误 `stderr`。Python runner 会寻找此前缀来区分是编译失败还是执行失败。
+  示例：
   ```cpp
   std::cerr << "[KERNEL_BUILD_ERROR]\n" << build_log << std::endl;
   return 1;
   ```
 
-### 5. Building the Tests
-The test cases are managed by a CMake auto-build system. Before running the tests, you must compile them.
+### 6. 构建测试用例
+测试用例由 CMake 自动构建系统管理。在运行测试之前，你必须先编译它们。
 
-From the root directory, create a build directory and run CMake:
+在项目根目录下，创建一个 build 目录并运行 CMake：
 ```bash
 mkdir build
 cd build
@@ -45,19 +54,18 @@ cmake ..
 make
 cd ..
 ```
-The CMake configuration automatically scans the `tests/` directory and creates executable targets for each test, placing a `test_bin` executable in the respective test directory.
+CMake 配置会自动扫描 `tests/` 目录并为每个标准测试用例创建可执行文件（名为 `test_bin` 并放置在对应的 `build/tests/<test_name>/` 目录下），同时自动将所需的 `.cl` 和 `.txt` 文件复制过去。（包含 `run.sh` 的用例会被跳过构建）。
 
-### 6. Running the Tests
-From the root directory, simply run:
+### 7. 运行测试用例
+在项目根目录下，直接运行：
 ```bash
-python runner.py
+python3 runner.py
 ```
 
-The runner will automatically:
-1. Discover your test in the `tests/` folder and name it based on the directory.
-2. Validate the directory structure (e.g. exactly one `.cl` file, presence of `expected.txt`).
-3. Ensure the test executable `test_bin` has been built.
-4. Run the binary.
-5. Verify the output using either the Golden File or Host-Verified mode.
-6. Provide a clean `[PASS]` or `[FAIL]` summary in the terminal.
-7. Save the test results (including execution time) to `results.csv`.
+Runner 会自动执行以下操作：
+1. 扫描 `tests/` 目录发现所有测试用例。
+2. 判断是执行标准二进制文件（`test_bin`）还是脚本文件（`run.sh`），并加载 `env.txt` 环境变量（如果存在）。
+3. 运行测试并记录执行时间。
+4. 使用预期文件（模式 A）或主机自验证（模式 B）来验证输出。
+5. 在终端输出清晰的 `[PASS]` 或 `[FAIL]` 总结。
+6. 将包含测试类型、环境变量标记、执行时间等信息的测试结果保存到 `results.csv` 文件中。

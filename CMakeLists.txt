@@ -10,6 +10,12 @@ file(GLOB TEST_DIRS RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/tests" "${CMAKE_CURREN
 
 foreach(TEST_NAME ${TEST_DIRS})
     if(IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests/${TEST_NAME}")
+        # Skip auto-build if the test directory has a run.sh script,
+        # as it will manage its own build/run process.
+        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/${TEST_NAME}/run.sh")
+            continue()
+        endif()
+
         file(GLOB CPP_FILES "${CMAKE_CURRENT_SOURCE_DIR}/tests/${TEST_NAME}/*.cpp")
 
         if(CPP_FILES)
